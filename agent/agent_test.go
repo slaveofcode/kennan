@@ -13,11 +13,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type testHandler struct {
+type mockHandler struct {
 	t *testing.T
 }
 
-func (h *testHandler) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
+func (h *mockHandler) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	// default handlers
 	upgrader := websocket.Upgrader{
 		CheckOrigin: func(r *http.Request) bool {
@@ -62,12 +62,34 @@ func rootCAs(t *testing.T, s *httptest.Server) *x509.CertPool {
 	return certs
 }
 
+func testSendReceive(t *testing.T, ws *websocket.Conn) {
+	wsMsgs := []string{
+		"Hi",
+		"How r u?",
+		"Ok, gotta go",
+	}
+
+	for _, msg := range wsMsgs {
+		err := ws.WriteMessage(
+			websocket.TextMessage,
+			[]byte(msg),
+		)
+
+		require.NoError(t, err)
+
+		_, rMsg, err := ws.ReadMessage()
+
+		require.NoError(t, err)
+		require.Equal(t, msg, string(rMsg))
+	}
+}
+
 func TestAgent(t *testing.T) {
 
-	server := httptest.NewTLSServer(&testHandler{})
+	server := httptest.NewTLSServer(&mockHandler{})
 	server.URL = "ws" + strings.TrimPrefix(server.URL, "http") // wss:// or ws://
 
-	t.Run("Create new default agent", func(t *testing.T) {
+	t.Run("Create new agent", func(t *testing.T) {
 		isConnected := false
 
 		// hijack origin handler
@@ -77,7 +99,7 @@ func TestAgent(t *testing.T) {
 			originHandler.ServeHTTP(rw, r)
 		})
 
-		agent, err := New("xxxx", "yyyy", server.URL, http.Header{
+		agent, err := New("xxxx", "yyyy", AgentURL(server.URL), http.Header{
 			"Origin": []string{HEADER_ORIGIN},
 		})
 
@@ -94,30 +116,37 @@ func TestAgent(t *testing.T) {
 
 		defer agent.Close()
 
-		// send some message
-		wsMsgs := []string{
-			"Hi",
-			"How r u?",
-			"Ok, gotta go",
-		}
-
-		for _, msg := range wsMsgs {
-			err := agent.wsockConn.WriteMessage(
-				websocket.TextMessage,
-				[]byte(msg),
-			)
-
-			require.NoError(t, err)
-
-			_, rMsg, err := agent.wsockConn.ReadMessage()
-
-			require.NoError(t, err)
-			require.Equal(t, msg, string(rMsg))
-		}
+		// ws test message
+		testSendReceive(t, agent.wsockConn)
 	})
 
-	t.Run("Create new agent", func(t *testing.T) {
+	t.Run("Create new default agent", func(t *testing.T) {
+		isConnected := false
 
+		// hijack origin handler
+		originHandler := server.Config.Handler
+		server.Config.Handler = http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+			isConnected = true
+			originHandler.ServeHTTP(rw, r)
+		})
+
+		agent, err := NewDefault(AgentURL(server.URL))
+
+		require.NoError(t, err, "Error creating new Agent")
+
+		agent.wsockDialer.TLSClientConfig = &tls.Config{
+			RootCAs: rootCAs(t, server),
+		}
+
+		err = agent.Dial(context.Background())
+
+		require.NoError(t, err, "Error dial websocket")
+		require.True(t, isConnected)
+
+		defer agent.Close()
+
+		// ws test message
+		testSendReceive(t, agent.wsockConn)
 	})
 
 	t.Cleanup(func() {

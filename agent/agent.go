@@ -13,18 +13,23 @@ import (
 
 const HEADER_ORIGIN = "https://web.whatsapp.com"
 
+type AgentURL string
+type ClientID string
+
 type Agent struct {
-	url         string
+	url         AgentURL
+	clientId    ClientID
 	headers     http.Header
 	wsockConn   *websocket.Conn
 	wsockDialer *websocket.Dialer
 }
 
-func New(initTag, clientId, addr string, headers http.Header) (*Agent, error) {
+func New(initTag string, clientId ClientID, addr AgentURL, headers http.Header) (*Agent, error) {
 	// conn, _, err := websocket.DefaultDialer.DialContext(ctx, addr, headers)
 	return &Agent{
-		url:     addr,
-		headers: headers,
+		url:      addr,
+		clientId: clientId,
+		headers:  headers,
 		wsockDialer: &websocket.Dialer{
 			Proxy:            http.ProxyFromEnvironment,
 			HandshakeTimeout: 45 * time.Second,
@@ -32,25 +37,43 @@ func New(initTag, clientId, addr string, headers http.Header) (*Agent, error) {
 	}, nil
 }
 
-func NewDefault(ctx context.Context) (*Agent, error) {
+func NewDefault(args ...interface{}) (*Agent, error) {
 	cid, err := browser.GetClientID()
 
 	if err != nil {
 		return nil, err
 	}
 
+	url := AgentURL(conf.GetServerRand())
+	clientId := ClientID(cid)
+	header := http.Header{
+		"Origin": []string{HEADER_ORIGIN},
+	}
+
+	// overriding defaults
+	if len(args) > 0 {
+		for _, arg := range args {
+			switch arg := arg.(type) {
+			case ClientID:
+				clientId = arg
+			case AgentURL:
+				url = arg
+			case http.Header:
+				header = arg
+			}
+		}
+	}
+
 	return New(
 		strconv.FormatInt(time.Now().Unix(), 10),
-		cid,
-		conf.GetServerRand(),
-		http.Header{
-			"Origin": []string{HEADER_ORIGIN},
-		},
+		clientId,
+		url,
+		header,
 	)
 }
 
 func (a *Agent) Dial(ctx context.Context) error {
-	conn, _, err := a.wsockDialer.DialContext(ctx, a.url, a.headers)
+	conn, _, err := a.wsockDialer.DialContext(ctx, string(a.url), a.headers)
 
 	if err != nil {
 		return err
