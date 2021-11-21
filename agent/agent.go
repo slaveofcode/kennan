@@ -3,90 +3,52 @@ package agent
 import (
 	"context"
 	"net/http"
-	"strconv"
 	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/slaveofcode/kennan/browser"
-	"github.com/slaveofcode/kennan/conf"
 )
 
-const HEADER_ORIGIN = "https://web.whatsapp.com"
-
 type AgentURL string
-type ClientID string
+
+type WS struct {
+	Conn   *websocket.Conn
+	Dialer *websocket.Dialer
+}
 
 type Agent struct {
-	url         AgentURL
-	clientId    ClientID
-	headers     http.Header
-	wsockConn   *websocket.Conn
-	wsockDialer *websocket.Dialer
+	url     AgentURL
+	headers http.Header
+	WS      *WS
 }
 
-func New(initTag string, clientId ClientID, addr AgentURL, headers http.Header) (*Agent, error) {
-	// conn, _, err := websocket.DefaultDialer.DialContext(ctx, addr, headers)
+func New(addr AgentURL, headers http.Header, handshakeTimeout time.Duration) *Agent {
 	return &Agent{
-		url:      addr,
-		clientId: clientId,
-		headers:  headers,
-		wsockDialer: &websocket.Dialer{
-			Proxy:            http.ProxyFromEnvironment,
-			HandshakeTimeout: 45 * time.Second,
+		url:     addr,
+		headers: headers,
+		WS: &WS{
+			Dialer: &websocket.Dialer{
+				Proxy:            http.ProxyFromEnvironment,
+				HandshakeTimeout: handshakeTimeout,
+			},
 		},
-	}, nil
-}
-
-func NewDefault(args ...interface{}) (*Agent, error) {
-	cid, err := browser.GetClientID()
-
-	if err != nil {
-		return nil, err
 	}
-
-	url := AgentURL(conf.GetServerRand())
-	clientId := ClientID(cid)
-	header := http.Header{
-		"Origin": []string{HEADER_ORIGIN},
-	}
-
-	// overriding defaults
-	if len(args) > 0 {
-		for _, arg := range args {
-			switch arg := arg.(type) {
-			case ClientID:
-				clientId = arg
-			case AgentURL:
-				url = arg
-			case http.Header:
-				header = arg
-			}
-		}
-	}
-
-	return New(
-		strconv.FormatInt(time.Now().Unix(), 10),
-		clientId,
-		url,
-		header,
-	)
 }
 
 func (a *Agent) Dial(ctx context.Context) error {
-	conn, _, err := a.wsockDialer.DialContext(ctx, string(a.url), a.headers)
+	conn, _, err := a.WS.Dialer.DialContext(ctx, string(a.url), a.headers)
 
 	if err != nil {
 		return err
 	}
 
-	a.wsockConn = conn
+	a.WS.Conn = conn
 
 	return nil
 }
 
 func (a Agent) Close() error {
-	if a.wsockConn != nil {
-		return a.wsockConn.Close()
+	if a.WS.Conn != nil {
+		return a.WS.Conn.Close()
 	}
 
 	return nil
