@@ -11,8 +11,9 @@ import (
 type AgentURL string
 
 type WS struct {
-	Conn   *websocket.Conn
-	Dialer *websocket.Dialer
+	Conn     *websocket.Conn
+	Dialer   *websocket.Dialer
+	IsClosed bool
 }
 
 type Agent struct {
@@ -48,6 +49,10 @@ func (a *Agent) Dial(ctx context.Context) error {
 
 func (a Agent) Close() error {
 	if a.WS.Conn != nil {
+		defer func() {
+			a.WS.IsClosed = true
+		}()
+
 		return a.WS.Conn.Close()
 	}
 

@@ -14,12 +14,16 @@ import (
 
 const WhatsAppSocketURL = "wss://web.whatsapp.com/ws"
 const WSHandshakeTimeout = 15 * time.Second
+const WebVersion = "[2, 2142, 12]"
+const WebAgent = `["Kennan", "Chrome", "89.0.4389"]`
 
 type ClientID string
 
 type Handler interface {
 	isPong(msgBytes []byte) (bool, *time.Time, error)
 	onNewMessage(msgType int, msgBytes []byte)
+	GetQRDataChan() chan QRData
+	IsAuthenticated() bool
 }
 
 type Auth struct {
@@ -30,11 +34,12 @@ type Config struct {
 	KeepAliveInterval time.Duration
 	DoKeepAlive       bool
 	LastKeepAliveResp time.Time
+	WebAgent          string
+	WebVersion        string
 }
 
 type WAInfo struct {
-	LastSeen   *time.Time
-	isLoggedIn bool
+	LastPing *time.Time
 }
 
 type WhatsAppAgent struct {
@@ -71,6 +76,8 @@ func NewWhatsAppAgent(args ...interface{}) (*WhatsAppAgent, error) {
 	config := &Config{
 		DoKeepAlive:       true,
 		KeepAliveInterval: time.Second * 20,
+		WebAgent:          WebAgent,
+		WebVersion:        WebVersion,
 	}
 
 	var handler Handler = NewWaMsghandler()
@@ -127,15 +134,19 @@ func (wa *WhatsAppAgent) sendKeepAlive() {
 	}
 }
 
+func (wa *WhatsAppAgent) sendInit() error {
+	tag := whatsapp.GenerateLoginTag()
+	data := []byte(tag + `,["admin","init",` + wa.Config.WebVersion + `,` + wa.Config.WebAgent + `,"` + wa.Auth.ClientID + `",true]`)
+	err := wa.WS.Conn.WriteMessage(websocket.TextMessage, data)
+
+	if err != nil {
+		log.Println("Unable send auth:", err)
+		return err
+	}
+	return nil
+}
+
 func (wa *WhatsAppAgent) startHandleMessages() {
-	// payloads := []string{
-	// 	"admin",
-	// 	"init",
-	// 	"[2, 2142, 12]",
-	// 	"Chrome",
-	// 	string(wa.clientId),
-	// 	"true",
-	// }
 	ws := wa.Agent.WS.Conn
 	for {
 		msgType, msgBytes, err := ws.ReadMessage()
@@ -146,28 +157,15 @@ func (wa *WhatsAppAgent) startHandleMessages() {
 
 		wa.Handler.onNewMessage(msgType, msgBytes)
 
-		isPong, lastSeen, err := wa.Handler.isPong(msgBytes)
+		isPong, tStamp, err := wa.Handler.isPong(msgBytes)
 
 		if err != nil {
 			log.Println("Unable check pong response:", err)
 		}
 
 		if isPong {
-			log.Println("Sending init...")
-			wa.WAInfo.LastSeen = lastSeen
-
-			// login
-			tag := whatsapp.GenerateLoginTag()
-			data := []byte(tag + `,["admin","init",[2, 2142, 12],["Kennan", "Chrome", "89.0.4389"],"` + wa.Auth.ClientID + `",true]`)
-
-			log.Println("send: ", string(data))
-			err = ws.WriteMessage(websocket.TextMessage, data)
-
-			if err != nil {
-				log.Println("Unable send auth:", err)
-			}
-
-			log.Println("init sent.")
+			wa.WAInfo.LastPing = tStamp
+			wa.sendInit()
 		}
 	}
 }
