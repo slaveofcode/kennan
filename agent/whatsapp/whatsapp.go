@@ -20,10 +20,14 @@ const WebAgent = `["Kennan", "Chrome", "89.0.4389"]`
 type ClientID string
 
 type Handler interface {
-	isPong(msgBytes []byte) (bool, *time.Time, error)
-	onNewMessage(msgType int, msgBytes []byte)
+	isPong([]byte) (bool, *time.Time, error)
+	onNewMessage(int, []byte)
+	onReceiveKeys([]byte, []byte)
 	GetQRDataChan() chan QRData
 	IsAuthenticated() bool
+	SetOnQRScan(bool)
+	IsOnQRScan() bool
+	GetConnInfoChan() chan ConnInfo
 }
 
 type Auth struct {
@@ -39,6 +43,8 @@ type Config struct {
 }
 
 type WAInfo struct {
+	EncKey   []byte
+	MacKey   []byte
 	LastPing *time.Time
 }
 
@@ -168,4 +174,11 @@ func (wa *WhatsAppAgent) startHandleMessages() {
 			wa.sendInit()
 		}
 	}
+}
+
+func (wa *WhatsAppAgent) SetKeys(encKey []byte, macKey []byte) {
+	wa.WAInfo.EncKey = encKey
+	wa.WAInfo.MacKey = macKey
+
+	wa.Handler.onReceiveKeys(encKey, macKey)
 }
