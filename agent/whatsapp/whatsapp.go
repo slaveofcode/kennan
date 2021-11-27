@@ -37,7 +37,7 @@ type Auth struct {
 type Config struct {
 	KeepAliveInterval time.Duration
 	DoKeepAlive       bool
-	LastKeepAliveResp time.Time
+	LastKeepAliveResp *time.Time
 	WebAgent          string
 	WebVersion        string
 }
@@ -135,6 +135,11 @@ func (wa *WhatsAppAgent) Connect(ctx context.Context) error {
 
 func (wa *WhatsAppAgent) sendKeepAlive() {
 	for wa.Config.DoKeepAlive {
+		if wa.Config.LastKeepAliveResp == nil {
+			now := time.Now()
+			wa.Config.LastKeepAliveResp = &now
+		}
+
 		wa.Agent.WS.Conn.WriteMessage(websocket.TextMessage, []byte("?,,"))
 		time.Sleep(wa.Config.KeepAliveInterval)
 	}

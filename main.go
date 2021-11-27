@@ -147,8 +147,8 @@ func main() {
 		}
 
 		keyEncrypted := make([]byte, 96)
-		copy(keyEncrypted[:64], sharedKeyBytesExpanded[64:])
-		copy(keyEncrypted[64:], sharedKeyBytesExpanded[64:])
+		copy(keyEncrypted[:16], sharedKeyBytesExpanded[64:])
+		copy(keyEncrypted[16:], secretBytes[64:])
 
 		cb, err := aes.NewCipher(sharedKeyBytesExpanded[:32])
 		if err != nil {
@@ -166,32 +166,15 @@ func main() {
 
 		cbc := cipher.NewCBCDecrypter(cb, iv)
 		cbc.CryptBlocks(cipherText, cipherText)
-
-		// cGCM, err := cipher.NewGCM(cb)
-		// if err != nil {
-		// 	log.Println("Unable prepare GCM decryptor", err)
-		// 	return
-		// }
-
-		// nonceSize := cGCM.NonceSize()
-		// keyDecrypted, err := cGCM.Open(nil, keyEncrypted[:nonceSize], keyEncrypted[nonceSize:], nil)
-
 		keyDecrypted, err := unPad(cipherText)
-
 		if err != nil {
 			log.Println("Unable decrypt key", err)
 			return
 		}
 
 		log.Println("Key decrypted:", string(keyDecrypted[:32]))
+		// encKey, macKey
 		waClient.SetKeys(keyDecrypted[:32], keyDecrypted[32:64])
-
-		// hmacHasher := hmac.New(sha256.New, make([]byte, 32))
-		// hmacHasher.Write(sharedKeyBytes)
-		// hkdf.Expand(func() hash.Hash {
-		// 	return hmacHasher
-		// }, 80, "")
-		// sharedSecret := ed25519.Sign(secKey)
 	}()
 
 	shutdown := make(chan os.Signal, 2)
