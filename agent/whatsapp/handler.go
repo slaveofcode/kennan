@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/slaveofcode/kennan/decoder"
 	"github.com/slaveofcode/kennan/utils/content"
 )
 
@@ -141,19 +142,22 @@ func (h *WAHandler) onNewMessage(msgType int, msgBytes []byte) {
 			return
 		}
 
-		decryptedMsg, err := h.DecryptMessage(msgContent)
+		if len(msgContent) >= 33 {
+			decryptedMsg, err := h.DecryptMessage(msgContent)
 
-		if err != nil {
-			log.Println("===================== ERR Begin ==========================")
-			log.Println("Error decrypt:", err)
-			log.Println("===================== ERR End ==========================")
+			if err != nil {
+				log.Println("===================== ERR Begin ==========================")
+				log.Println("Error decrypt:", err)
+				log.Println("===================== ERR End ==========================")
+				return
+			}
+
+			log.Println("===================== MSG Start ==========================")
+			log.Println("MSG:", decryptedMsg)
+			log.Println("MSG:", string(decryptedMsg))
+			log.Println("===================== MSG End ==========================")
 			return
 		}
-
-		log.Println("===================== MSG Start ==========================")
-		log.Println("MSG:", decryptedMsg)
-		log.Println("===================== MSG End ==========================")
-		return
 	}
 }
 
@@ -193,13 +197,13 @@ func (h *WAHandler) HandleInfo(infoData string) {
 
 	switch infoType {
 	case "Conn":
-		log.Println("Connection:", jsonInfo)
+		log.Println("Connection:", string(jsonInfo))
 		return
 	case "Props":
-		log.Println("Properties:", jsonInfo)
+		log.Println("Properties:", string(jsonInfo))
 		return
 	case "Presence":
-		log.Println("Presence:", jsonInfo)
+		log.Println("Presence:", string(jsonInfo))
 		return
 	}
 
@@ -208,27 +212,28 @@ func (h *WAHandler) HandleInfo(infoData string) {
 	log.Println("===================== Info End  ==========================")
 }
 
-func (h *WAHandler) DecryptMessage(msg string) (string, error) {
-	// validate message
-	msgBytes := []byte(msg)
-	hmacHash := hmac.New(sha256.New, h.MacKey)
-	validationKey := msgBytes[32:]
-	hmacHash.Write(validationKey)
-	if !hmac.Equal(hmacHash.Sum(nil), msgBytes[:32]) {
-		log.Println("Invalid key")
-		return "", fmt.Errorf("invalid key validation")
-	}
+func (h *WAHandler) DecryptMessage(msgContent string) ([]byte, error) {
+	msgBytes := []byte(msgContent)
 
-	msgContentEncrypted := msgBytes[:32]
+	// validate message
+	checksum := msgBytes[:32]
+	msgContentEncrypted := msgBytes[32:]
+
+	hmacHash := hmac.New(sha256.New, h.MacKey)
+	hmacHash.Write(msgContentEncrypted)
+	if !hmac.Equal(hmacHash.Sum(nil), checksum) {
+		log.Println("Invalid key")
+		return nil, fmt.Errorf("invalid key validation")
+	}
 
 	// decrypt message
 	cb, err := aes.NewCipher(h.EncKey)
 	if err != nil {
-		return "", fmt.Errorf("unable prepare aes decryptor: %w", err)
+		return nil, fmt.Errorf("unable prepare aes decryptor: %w", err)
 	}
 
 	if len(msgContentEncrypted) < aes.BlockSize {
-		return "", fmt.Errorf("ciphertext is shorter then block size: %d / %d", len(msgContentEncrypted), aes.BlockSize)
+		return nil, fmt.Errorf("ciphertext is shorter then block size: %d / %d", len(msgContentEncrypted), aes.BlockSize)
 	}
 
 	iv := msgContentEncrypted[:aes.BlockSize]
@@ -237,7 +242,22 @@ func (h *WAHandler) DecryptMessage(msg string) (string, error) {
 	cbc := cipher.NewCBCDecrypter(cb, iv)
 	cbc.CryptBlocks(cipherText, cipherText)
 
-	return string(cipherText), nil
+	decrypted, err := content.UnPad(cipherText)
+	if err != nil {
+		return nil, err
+	}
+
+	// unpack
+	decoder := decoder.NewDecoder(decrypted)
+	desc, attrs, content, err := decoder.Read()
+
+	log.Println("===================== Decrypt Begin ==========================")
+	log.Println("desc:", desc)
+	log.Println("attrs:", attrs)
+	log.Println("content:", content)
+	log.Println("===================== Decrypt End  ==========================")
+
+	return cipherText, err
 }
 
 func (h *WAHandler) SetOnQRScan(stat bool) {
