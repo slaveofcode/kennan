@@ -1,4 +1,4 @@
-package decoder
+package binary
 
 const (
 	NIBBLE_8     = 255

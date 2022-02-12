@@ -1,4 +1,4 @@
-package decoder
+package binary
 
 import (
 	"bytes"
@@ -386,15 +386,50 @@ func TestBinary(t *testing.T) {
 			t.Errorf("got error %s", err.Error())
 		}
 
-		// log.Println("========================")
-		// log.Println(desc, res, content)
-		// log.Println("========================")
+		var cmp1 interface{}
+		var cmp2 interface{}
+
+		resByte, _ := json.Marshal(res)
+		ctnByte, _ := json.Marshal(content)
+
+		byt, _ := json.Marshal([]interface{}{
+			desc,
+			res,
+			content,
+		})
+
+		json.Unmarshal(byt, &cmp1)
+		json.Unmarshal(validJson, &cmp2)
+
+		log.Println("==========beg==============")
+		log.Printf("%s\n", desc)
+		log.Printf("%s\n", resByte)
+		log.Printf("%s\n", ctnByte)
+		log.Println("---")
+		log.Printf("%s\n", cmp1)
+		log.Println("==========mid==============")
+		log.Printf("%s\n", cmp2)
+		log.Println("==========end==============")
+
+		if !reflect.DeepEqual(cmp1, cmp2) {
+			t.Errorf("result not valid")
+		}
+	})
+
+	t.Run("Should read node with media", func(t *testing.T) {
+		hex, _ := hex.DecodeString("f8063f2dfafc0831323334353637385027fc0431323334f801f80228fc0701020304050607")
+		dec := NewDecoder(hex)
+		validJson := []byte(`["picture", {"jid": "12345678@c.us", id: "1234"}, [["image", null, Buffer.from([1,2,3,4,5,6,7])]]]`)
+
+		desc, res, content, err := dec.readNode()
+		if err != nil {
+			t.Errorf("got error %s", err.Error())
+		}
 
 		var cmp1 interface{}
 		var cmp2 interface{}
 
 		resByte, _ := json.Marshal(res)
-		// ctnNodes := content.([]Node)
 		ctnByte, _ := json.Marshal(content)
 
 		byt, _ := json.Marshal([]interface{}{

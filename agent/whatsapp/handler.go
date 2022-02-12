@@ -13,7 +13,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/slaveofcode/kennan/decoder"
+	"github.com/slaveofcode/kennan/binary"
+	"github.com/slaveofcode/kennan/pb"
 	"github.com/slaveofcode/kennan/utils/content"
 )
 
@@ -248,13 +249,18 @@ func (h *WAHandler) DecryptMessage(msgContent string) ([]byte, error) {
 	}
 
 	// unpack
-	decoder := decoder.NewDecoder(decrypted)
+	decoder := binary.NewDecoder(decrypted)
 	desc, attrs, content, err := decoder.Read()
 
 	log.Println("===================== Decrypt Begin ==========================")
 	log.Println("desc:", desc)
 	log.Println("attrs:", attrs)
-	log.Println("content:", content)
+	val, ok := content.(pb.WebMessageInfo)
+	if ok {
+		log.Println("content:", val)
+	} else {
+		log.Println("content:", content)
+	}
 	log.Println("===================== Decrypt End  ==========================")
 
 	return cipherText, err
